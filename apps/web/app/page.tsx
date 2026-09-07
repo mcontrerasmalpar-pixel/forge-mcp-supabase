@@ -42,32 +42,22 @@ export default function Page() {
     return () => sub.subscription.unsubscribe();
   }, [supabase]);
 
-  async function signIn(e: React.FormEvent) {
+  async function signInOnly(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    const { data: signedIn, error: inErr } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (signedIn.session) {
-      await refreshSession();
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setErr(error.message);
+    if (data.session) await refreshSession();
+  }
+
+  async function signUpOnly() {
+    setErr(null);
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) return setErr(error.message);
+    if (!data.session) {
+      setErr("Usuario creado. Desactiva Confirm email y pulsa Solo entrar.");
       return;
     }
-    const { data: signedUp, error: sErr } = await supabase.auth.signUp({ email, password });
-    if (signedUp.session) {
-      await refreshSession();
-      return;
-    }
-    setErr(
-      [
-        sErr?.message ?? inErr?.message ?? "No hay sesion",
-        signedUp.user && !signedUp.session
-          ? "La cuenta existe pero Auth no entrego JWT. Desactiva Confirm email y vuelve a entrar."
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" — "),
-    );
     await refreshSession();
   }
 
@@ -75,7 +65,7 @@ export default function Page() {
     setErr(null);
     const session = await refreshSession();
     if (!session?.access_token) {
-      setErr("No hay JWT. Entra de nuevo despues de desactivar Confirm email.");
+      setErr("No hay JWT. Entra con Solo entrar.");
       return;
     }
     const { data, error } = await supabase.rpc("forge_bootstrap_demo");
@@ -121,7 +111,7 @@ export default function Page() {
       {err ? <p style={{ color: "#ff8b8b" }}>{err}</p> : null}
 
       {!hasJwt ? (
-        <form onSubmit={signIn} style={{ display: "grid", gap: 8, maxWidth: 360 }}>
+        <form onSubmit={signInOnly} style={{ display: "grid", gap: 8, maxWidth: 360 }}>
           <input
             id="email"
             name="email"
@@ -139,7 +129,10 @@ export default function Page() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="password"
           />
-          <button type="submit">Entrar / registrar</button>
+          <button type="submit">Solo entrar</button>
+          <button type="button" onClick={signUpOnly}>
+            Solo registrar
+          </button>
         </form>
       ) : (
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -177,12 +170,7 @@ export default function Page() {
       </section>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          style={{ flex: 1 }}
-          placeholder="Pregunta al assistant"
-        />
+        <input value={input} onChange={(e) => setInput(e.target.value)} style={{ flex: 1 }} />
         <button disabled={busy || !hasJwt} onClick={send}>
           {busy ? "..." : "Enviar"}
         </button>
