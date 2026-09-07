@@ -7,15 +7,15 @@ type Msg = { role: "user" | "assistant"; content: string; trace?: unknown };
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const hasSupabaseConfig = Boolean(supabaseUrl && supabaseKey);
 
 export default function Page() {
-  const supabase = useMemo(
-    () =>
-      createClient(supabaseUrl, supabaseKey, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-      }),
-    [],
-  );
+  const supabase = useMemo(() => {
+    if (!hasSupabaseConfig) return null;
+    return createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    });
+  }, []);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,6 +28,11 @@ export default function Page() {
   const [err, setErr] = useState<string | null>(null);
 
   async function refreshSession() {
+    if (!supabase) {
+      setSessionEmail(null);
+      setHasJwt(false);
+      return null;
+    }
     const { data } = await supabase.auth.getSession();
     setSessionEmail(data.session?.user.email ?? null);
     setHasJwt(Boolean(data.session?.access_token));
@@ -35,6 +40,7 @@ export default function Page() {
   }
 
   useEffect(() => {
+    if (!supabase) return;
     void refreshSession();
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
       void refreshSession();
@@ -45,6 +51,7 @@ export default function Page() {
   async function signInOnly(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (!supabase) return setErr("Falta configurar NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.");
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setErr(error.message);
     if (data.session) await refreshSession();
@@ -52,6 +59,7 @@ export default function Page() {
 
   async function signUpOnly() {
     setErr(null);
+    if (!supabase) return setErr("Falta configurar NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.");
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return setErr(error.message);
     if (!data.session) {
@@ -63,6 +71,7 @@ export default function Page() {
 
   async function loadDemo() {
     setErr(null);
+    if (!supabase) return setErr("Falta configurar NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.");
     const session = await refreshSession();
     if (!session?.access_token) {
       setErr("No hay JWT. Entra con Solo entrar.");
@@ -76,16 +85,26 @@ export default function Page() {
   async function send() {
     setBusy(true);
     setErr(null);
+    if (!supabase) {
+      setErr("Falta configurar NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      setBusy(false);
+      return;
+    }
     const next = [...msgs, { role: "user" as const, content: input }];
     setMsgs(next);
     setInput("");
     const session = await refreshSession();
+    if (!session?.access_token) {
+      setErr("No hay JWT. Entra con Solo entrar.");
+      setBusy(false);
+      return;
+    }
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? ""}`,
+          Authorization: "Bearer " + session.access_token,
           apikey: supabaseKey,
         },
         body: JSON.stringify({ messages: next }),
@@ -109,6 +128,11 @@ export default function Page() {
       </p>
 
       {err ? <p style={{ color: "#ff8b8b" }}>{err}</p> : null}
+      {!hasSupabaseConfig ? (
+        <p style={{ color: "#ff8b8b" }}>
+          Configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY para usar la app.
+        </p>
+      ) : null}
 
       {!hasJwt ? (
         <form onSubmit={signInOnly} style={{ display: "grid", gap: 8, maxWidth: 360 }}>
@@ -139,7 +163,7 @@ export default function Page() {
           <button type="button" onClick={loadDemo}>
             Cargar demo RLS
           </button>
-          <button type="button" onClick={() => supabase.auth.signOut().then(() => refreshSession())}>
+          <button type="button" onClick={() => supabase?.auth.signOut().then(() => refreshSession())}>
             Salir
           </button>
         </div>
