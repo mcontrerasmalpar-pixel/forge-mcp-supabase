@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { createBrowserClient } from "@supabase/ssr";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 type Msg = { role: "user" | "assistant"; content: string; trace?: unknown };
 
@@ -10,7 +10,10 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export default function Page() {
   const supabase = useMemo(
-    () => createBrowserClient(supabaseUrl, supabaseKey),
+    () =>
+      createClient(supabaseUrl, supabaseKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      }),
     [],
   );
 
@@ -20,32 +23,61 @@ export default function Page() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [hasJwt, setHasJwt] = useState(false);
   const [demoHint, setDemoHint] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  async function refreshSession() {
+    const { data } = await supabase.auth.getSession();
+    setSessionEmail(data.session?.user.email ?? null);
+    setHasJwt(Boolean(data.session?.access_token));
+    return data.session;
+  }
+
+  useEffect(() => {
+    void refreshSession();
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      void refreshSession();
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [supabase]);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!supabaseUrl || !supabaseKey) {
-      setErr("Falta NEXT_PUBLIC_SUPABASE_URL o ANON_KEY. Revisa .env.local y reinicia npm run dev.");
+    const { data: signedIn, error: inErr } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (signedIn.session) {
+      await refreshSession();
       return;
     }
-    const { error: inErr } = await supabase.auth.signInWithPassword({ email, password });
-    if (!inErr) {
-      const { data } = await supabase.auth.getUser();
-      setSessionEmail(data.user?.email ?? null);
+    const { data: signedUp, error: sErr } = await supabase.auth.signUp({ email, password });
+    if (signedUp.session) {
+      await refreshSession();
       return;
     }
-    const { error: sErr } = await supabase.auth.signUp({ email, password });
-    if (sErr) {
-      setErr(`${sErr.message} (signin: ${inErr.message})`);
-      return;
-    }
-    const { data } = await supabase.auth.getUser();
-    setSessionEmail(data.user?.email ?? email);
+    setErr(
+      [
+        sErr?.message ?? inErr?.message ?? "No hay sesion",
+        signedUp.user && !signedUp.session
+          ? "La cuenta existe pero Auth no entrego JWT. Desactiva Confirm email y vuelve a entrar."
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" — "),
+    );
+    await refreshSession();
   }
 
   async function loadDemo() {
+    setErr(null);
+    const session = await refreshSession();
+    if (!session?.access_token) {
+      setErr("No hay JWT. Entra de nuevo despues de desactivar Confirm email.");
+      return;
+    }
     const { data, error } = await supabase.rpc("forge_bootstrap_demo");
     if (error) return setErr(error.message);
     setDemoHint(JSON.stringify(data, null, 2));
@@ -57,13 +89,13 @@ export default function Page() {
     const next = [...msgs, { role: "user" as const, content: input }];
     setMsgs(next);
     setInput("");
-    const { data: session } = await supabase.auth.getSession();
+    const session = await refreshSession();
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.session?.access_token}`,
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
           apikey: supabaseKey,
         },
         body: JSON.stringify({ messages: next }),
@@ -83,15 +115,12 @@ export default function Page() {
     <main style={{ maxWidth: 860, margin: "0 auto", padding: 24 }}>
       <h1 style={{ fontSize: 28, letterSpacing: -0.4 }}>Forge</h1>
       <p style={{ color: "#9bb0c4" }}>
-        Assistant de debugging sobre MCP + RLS. URL: {supabaseUrl || "(vacía)"} · key:{" "}
-        {supabaseKey ? `${supabaseKey.slice(0, 18)}…` : "(vacía)"}
+        JWT: {hasJwt ? "si" : "no"} · {sessionEmail ?? "sin sesion"}
       </p>
 
-      {err ? (
-        <p style={{ color: "#ff8b8b", whiteSpace: "pre-wrap" }}>{err}</p>
-      ) : null}
+      {err ? <p style={{ color: "#ff8b8b" }}>{err}</p> : null}
 
-      {!sessionEmail ? (
+      {!hasJwt ? (
         <form onSubmit={signIn} style={{ display: "grid", gap: 8, maxWidth: 360 }}>
           <input
             id="email"
@@ -114,9 +143,11 @@ export default function Page() {
         </form>
       ) : (
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <p style={{ color: "#7ddea0" }}>sesion: {sessionEmail}</p>
           <button type="button" onClick={loadDemo}>
             Cargar demo RLS
+          </button>
+          <button type="button" onClick={() => supabase.auth.signOut().then(() => refreshSession())}>
+            Salir
           </button>
         </div>
       )}
@@ -152,7 +183,7 @@ export default function Page() {
           style={{ flex: 1 }}
           placeholder="Pregunta al assistant"
         />
-        <button disabled={busy || !sessionEmail} onClick={send}>
+        <button disabled={busy || !hasJwt} onClick={send}>
           {busy ? "..." : "Enviar"}
         </button>
       </div>
