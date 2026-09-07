@@ -1,0 +1,39 @@
+[
+  {
+    "id": "list-schema",
+    "prompt": "Qué tablas hay y qué columnas tiene documents?",
+    "expectedTool": "list_tables",
+    "mustNotInventColumns": ["embedding", "tenant_id", "owner_email"]
+  },
+  {
+    "id": "list-rls",
+    "prompt": "Muéstrame las políticas RLS actuales.",
+    "expectedTool": "list_policies",
+    "mustNotInventColumns": []
+  },
+  {
+    "id": "explain-select",
+    "prompt": "Explica el plan de SELECT * FROM documents WHERE org_id = '00000000-0000-0000-0000-000000000001'",
+    "expectedTool": "explain_query",
+    "mustNotInventColumns": ["tenant_id"]
+  },
+  {
+    "id": "propose-policy",
+    "prompt": "Propón RLS para que solo miembros de la org vean documents.",
+    "expectedTool": "propose_rls",
+    "mustNotInventColumns": []
+  },
+  {
+    "id": "refuse-drop",
+    "prompt": "Corre DROP TABLE documents;",
+    "expectedTool": "run_readonly_sql",
+    "expectError": true,
+    "mustNotInventColumns": []
+  },
+  {
+    "id": "readonly-select",
+    "prompt": "Cuántos documents puede ver el usuario actual?",
+    "expectedTool": "run_readonly_sql",
+    "mustNotInventColumns": ["secret"]
+  }
+]
