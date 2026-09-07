@@ -5,13 +5,12 @@ import { createBrowserClient } from "@supabase/ssr";
 
 type Msg = { role: "user" | "assistant"; content: string; trace?: unknown };
 
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
 export default function Page() {
   const supabase = useMemo(
-    () =>
-      createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      ),
+    () => createBrowserClient(supabaseUrl, supabaseKey),
     [],
   );
 
@@ -22,51 +21,61 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [demoHint, setDemoHint] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      const { error: sErr } = await supabase.auth.signUp({ email, password });
-      if (sErr) return alert(sErr.message);
+    setErr(null);
+    if (!supabaseUrl || !supabaseKey) {
+      setErr("Falta NEXT_PUBLIC_SUPABASE_URL o ANON_KEY. Revisa .env.local y reinicia npm run dev.");
+      return;
+    }
+    const { error: inErr } = await supabase.auth.signInWithPassword({ email, password });
+    if (!inErr) {
+      const { data } = await supabase.auth.getUser();
+      setSessionEmail(data.user?.email ?? null);
+      return;
+    }
+    const { error: sErr } = await supabase.auth.signUp({ email, password });
+    if (sErr) {
+      setErr(`${sErr.message} (signin: ${inErr.message})`);
+      return;
     }
     const { data } = await supabase.auth.getUser();
-    setSessionEmail(data.user?.email ?? null);
+    setSessionEmail(data.user?.email ?? email);
   }
 
   async function loadDemo() {
     const { data, error } = await supabase.rpc("forge_bootstrap_demo");
-    if (error) return alert(error.message);
+    if (error) return setErr(error.message);
     setDemoHint(JSON.stringify(data, null, 2));
   }
 
   async function send() {
     setBusy(true);
+    setErr(null);
     const next = [...msgs, { role: "user" as const, content: input }];
     setMsgs(next);
     setInput("");
     const { data: session } = await supabase.auth.getSession();
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/chat`,
-      {
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.session?.access_token}`,
-          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          apikey: supabaseKey,
         },
         body: JSON.stringify({ messages: next }),
-      },
-    );
-    const json = await res.json();
-    setMsgs([
-      ...next,
-      {
-        role: "assistant",
-        content: json.content ?? JSON.stringify(json),
-        trace: json.trace,
-      },
-    ]);
+      });
+      const json = await res.json();
+      setMsgs([
+        ...next,
+        { role: "assistant", content: json.content ?? JSON.stringify(json), trace: json.trace },
+      ]);
+    } catch (e) {
+      setErr(`chat fetch: ${(e as Error).message}`);
+    }
     setBusy(false);
   }
 
@@ -74,13 +83,28 @@ export default function Page() {
     <main style={{ maxWidth: 860, margin: "0 auto", padding: 24 }}>
       <h1 style={{ fontSize: 28, letterSpacing: -0.4 }}>Forge</h1>
       <p style={{ color: "#9bb0c4" }}>
-        Assistant de debugging sobre MCP + RLS. Las tools no aplican migraciones solas.
+        Assistant de debugging sobre MCP + RLS. URL: {supabaseUrl || "(vacía)"} · key:{" "}
+        {supabaseKey ? `${supabaseKey.slice(0, 18)}…` : "(vacía)"}
       </p>
+
+      {err ? (
+        <p style={{ color: "#ff8b8b", whiteSpace: "pre-wrap" }}>{err}</p>
+      ) : null}
 
       {!sessionEmail ? (
         <form onSubmit={signIn} style={{ display: "grid", gap: 8, maxWidth: 360 }}>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" />
           <input
+            id="email"
+            name="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="email"
+          />
+          <input
+            id="password"
+            name="password"
+            autoComplete="current-password"
             value={password}
             type="password"
             onChange={(e) => setPassword(e.target.value)}
@@ -117,12 +141,6 @@ export default function Page() {
           >
             <strong>{m.role}</strong>
             <div>{m.content}</div>
-            {m.trace ? (
-              <details style={{ marginTop: 8, color: "#9bb0c4" }}>
-                <summary>tool trace</summary>
-                <pre>{JSON.stringify(m.trace, null, 2)}</pre>
-              </details>
-            ) : null}
           </article>
         ))}
       </section>
