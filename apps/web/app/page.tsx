@@ -17,10 +17,11 @@ export default function Page() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [input, setInput] = useState("Lista las tablas y las politicas RLS.");
+  const [input, setInput] = useState("Cuantos documents puedo ver y cuales son sus titulos?");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [demoHint, setDemoHint] = useState<string | null>(null);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
@@ -31,6 +32,12 @@ export default function Page() {
     }
     const { data } = await supabase.auth.getUser();
     setSessionEmail(data.user?.email ?? null);
+  }
+
+  async function loadDemo() {
+    const { data, error } = await supabase.rpc("forge_bootstrap_demo");
+    if (error) return alert(error.message);
+    setDemoHint(JSON.stringify(data, null, 2));
   }
 
   async function send() {
@@ -82,8 +89,19 @@ export default function Page() {
           <button type="submit">Entrar / registrar</button>
         </form>
       ) : (
-        <p style={{ color: "#7ddea0" }}>sesion: {sessionEmail}</p>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <p style={{ color: "#7ddea0" }}>sesion: {sessionEmail}</p>
+          <button type="button" onClick={loadDemo}>
+            Cargar demo RLS
+          </button>
+        </div>
       )}
+
+      {demoHint ? (
+        <pre style={{ background: "#12181f", padding: 12, borderRadius: 8, color: "#9bb0c4" }}>
+          {demoHint}
+        </pre>
+      ) : null}
 
       <section style={{ marginTop: 24, display: "grid", gap: 12 }}>
         {msgs.map((m, i) => (
