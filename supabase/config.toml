@@ -1,7 +1,11 @@
-project_id = "forge-mcp-supabase"
+project_id = "skxljgnpjmnekvecpfjd"
 
 [functions.mcp-server]
+enabled = true
 verify_jwt = true
+entrypoint = "./functions/mcp-server/index.ts"
 
 [functions.chat]
+enabled = true
 verify_jwt = true
+entrypoint = "./functions/chat/index.ts"
