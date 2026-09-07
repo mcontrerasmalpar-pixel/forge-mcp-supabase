@@ -1,0 +1,11 @@
+node_modules
+.next
+.turbo
+.env
+.env.local
+.DS_Store
+supabase/.temp
+supabase/.branches
+dist
+coverage
+.cursor/mcp.json

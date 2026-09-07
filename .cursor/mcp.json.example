@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "forge": {
+      "url": "https://YOUR_PROJECT.supabase.co/functions/v1/mcp-server",
+      "headers": {
+        "Authorization": "Bearer USER_JWT",
+        "apikey": "SUPABASE_ANON_KEY"
+      }
+    }
+  }
+}

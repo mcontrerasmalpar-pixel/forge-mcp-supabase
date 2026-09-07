@@ -1,0 +1,10 @@
+{
+  "name": "forge-mcp-supabase",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MCP server + debugging assistant on Supabase Edge Functions",
+  "scripts": {
+    "dev": "npm --prefix apps/web run dev",
+    "evals": "node evals/run.mjs"
+  }
+}

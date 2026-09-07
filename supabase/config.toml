@@ -1,0 +1,7 @@
+project_id = "forge-mcp-supabase"
+
+[functions.mcp-server]
+verify_jwt = true
+
+[functions.chat]
+verify_jwt = true
