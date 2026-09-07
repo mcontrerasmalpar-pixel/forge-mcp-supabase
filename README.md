@@ -4,53 +4,68 @@ MCP server + assistant de debugging sobre **Supabase Edge Functions**.
 
 El agente lista schema, explica planes SQL, propone politicas RLS y corre queries de **solo lectura** respetando el JWT del usuario. Nada de `service_role` en el cliente.
 
-Proyecto hosted (link, push, deploy, demo de 2 orgs): ver [HOSTED.md](./HOSTED.md).
+Proyecto hosted: [HOSTED.md](./HOSTED.md)  
+Repo: https://github.com/mcontrerasmalpar-pixel/forge-mcp-supabase
 
-## Que demuestra
+## Que demuestra (senal para Supabase / AI tooling)
 
 - MCP hospedado en Edge Functions (Deno)
 - Tools con allowlist (sin DDL destructivo)
-- RLS como autorizacion, no checks en el frontend
-- Assistant UI con tool trace y boton **Cargar demo RLS**
-- Harness de evals en `evals/`
-- Skill para agentes en `skills/supabase-rls.md`
+- **RLS como autorizacion** (no checks en el frontend)
+- Demo multi-tenant: org visible `acme-alpha` vs oculta `beta-shadow`
+- Assistant UI con sesion JWT y boton **Cargar demo RLS**
+- LLM del chat **opcional** (Azure OpenAI u otro); el MCP funciona sin el
 
 ## Arquitectura
 
 ```
 Cursor / Assistant UI
-        |  MCP JSON-RPC
+        |  MCP JSON-RPC  (user JWT)
         v
 Edge Function  mcp-server
-        |  user JWT -> Postgres + RLS
+        |  Postgres + RLS
         v
 Postgres
 ```
 
-El LLM (Azure OpenAI mini u otro) solo vive en `chat`. El MCP no habla con el modelo: expone tools.
+La function `chat` solo orquesta un LLM + tool calls. Si no hay API de modelo configurada, responde que uses el MCP directo (Cursor).
 
-## Setup local
+## Demo hosted (sin Azure)
 
-```bash
-git clone https://github.com/mcontrerasmalpar-pixel/forge-mcp-supabase.git
-cd forge-mcp-supabase
+1. Crea proyecto Supabase y linkea este repo (o `supabase db push` + `functions deploy`).
+2. `apps/web/.env.local`:
 
-npx supabase start
-npx supabase db reset
-
-npx supabase secrets set AZURE_OPENAI_ENDPOINT=https://YOUR.openai.azure.com
-npx supabase secrets set AZURE_OPENAI_API_KEY=...
-npx supabase secrets set AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
-
-cd apps/web
-cp .env.example .env.local
-npm install
-npm run dev
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...   # legacy anon o publishable
 ```
 
-Despues del login pulsa **Cargar demo RLS**: te asigna `acme-alpha` y crea documentos en `beta-shadow` que no debes ver.
+3. `cd apps/web && npm install && npm run dev`
+4. Desactiva **Confirm email** en Auth → Providers → Email.
+5. **Solo entrar** → debe decir `JWT: si`.
+6. **Cargar demo RLS** → JSON con `your_org: acme-alpha` y `hidden_org: beta-shadow`.
 
-Cursor: copia `.cursor/mcp.json.example` a `.cursor/mcp.json`.
+Con eso ya demuestras multi-tenant + RLS + bootstrap. El chat en la UI es extra.
+
+## MCP desde Cursor (sin Azure)
+
+Copia `.cursor/mcp.json.example` a `.cursor/mcp.json` y apunta a tu function:
+
+```json
+{
+  "mcpServers": {
+    "forge": {
+      "url": "https://YOUR_REF.supabase.co/functions/v1/mcp-server",
+      "headers": {
+        "Authorization": "Bearer USER_JWT",
+        "apikey": "SUPABASE_ANON_KEY"
+      }
+    }
+  }
+}
+```
+
+El `USER_JWT` es el `access_token` de una sesion iniciada (mismo usuario de la demo). Las tools heredan RLS de ese JWT.
 
 ## Tools
 
@@ -63,12 +78,27 @@ Cursor: copia `.cursor/mcp.json.example` a `.cursor/mcp.json`.
 | propose_rls | draft, does not apply |
 | run_readonly_sql | SELECT/WITH/EXPLAIN + read-only txn |
 
+## LLM opcional (Azure u otro)
+
+Azure for Students a menudo tiene **cuota 0** en modelos OpenAI; no es bloqueante.
+
+Si mas adelante tienes endpoint + key:
+
+```bash
+npx supabase secrets set AZURE_OPENAI_ENDPOINT=https://YOUR.openai.azure.com
+npx supabase secrets set AZURE_OPENAI_API_KEY=...
+npx supabase secrets set AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+npx supabase functions deploy chat --project-ref YOUR_REF
+```
+
+Sin secrets, `chat` responde que uses MCP desde Cursor.
+
 ## Seguridad
 
-1. Cliente: anon key + user JWT.
+1. Cliente: anon/publishable key + user JWT.
 2. `run_readonly_sql` rechaza INSERT/UPDATE/DELETE/DROP/ALTER.
 3. `propose_rls` no aplica migraciones.
-4. Rate limit 40 tools/min por `auth.uid()`.
+4. Rate limit por `auth.uid()` en el servidor MCP.
 
 ```bash
 npm run evals
