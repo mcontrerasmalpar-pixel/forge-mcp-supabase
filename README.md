@@ -4,12 +4,14 @@ MCP server + assistant de debugging sobre **Supabase Edge Functions**.
 
 El agente lista schema, explica planes SQL, propone politicas RLS y corre queries de **solo lectura** respetando el JWT del usuario. Nada de `service_role` en el cliente.
 
+Proyecto hosted (link, push, deploy, demo de 2 orgs): ver [HOSTED.md](./HOSTED.md).
+
 ## Que demuestra
 
 - MCP hospedado en Edge Functions (Deno)
 - Tools con allowlist (sin DDL destructivo)
 - RLS como autorizacion, no checks en el frontend
-- Assistant UI con tool trace
+- Assistant UI con tool trace y boton **Cargar demo RLS**
 - Harness de evals en `evals/`
 - Skill para agentes en `skills/supabase-rls.md`
 
@@ -27,7 +29,7 @@ Postgres
 
 El LLM (Azure OpenAI mini u otro) solo vive en `chat`. El MCP no habla con el modelo: expone tools.
 
-## Setup
+## Setup local
 
 ```bash
 git clone https://github.com/mcontrerasmalpar-pixel/forge-mcp-supabase.git
@@ -45,6 +47,8 @@ cp .env.example .env.local
 npm install
 npm run dev
 ```
+
+Despues del login pulsa **Cargar demo RLS**: te asigna `acme-alpha` y crea documentos en `beta-shadow` que no debes ver.
 
 Cursor: copia `.cursor/mcp.json.example` a `.cursor/mcp.json`.
 
